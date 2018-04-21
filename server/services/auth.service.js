@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken')
 const User = require('../models/user')
 const config = require('../config/config')
 const authSvc = {}
-
+const mySqlDb = require("../config/mySqlDB")
 
 module.exports = authSvc
 
@@ -11,47 +11,63 @@ module.exports = authSvc
 
 //define functions
 
+
+
+
+
 authSvc.register = function(req, res){
     let user = req.body
-    User.find({email : user.email}, (err, data) => {
+    mySqlDb.query('select email from users where email = ?', [user.email], (err, rows) =>{
         if(err){
-            throw err
+            console.log(err)
+            res.status(401).send("registration failed")
         }else{
-            if(data.length === 0){
-                let newUser = new User({email: user.email})
-                let token = authSvc.createToken(newUser._id)
-                newUser.password = authSvc.createHash(user.password)
-                newUser.save((err, data) => {
+            if(rows.length === 0){
+                let hash = authSvc.createHash(user.password)
+                mySqlDb.query('insert into users (email, password) values(?, ?)', [user.email, hash], (err, rows) =>{
                     if(err){
-                        throw err
+                        console.log(err)
+                        res.status(401).send("registration failed")
                     }else{
-                        res.send({token})
+                        mySqlDb.query('select ID from users where email = ?', [user.email], (err, row) =>{
+                            if(err){
+                                console.log(err)
+                                res.status(401).send("registration failed")
+                            }else{
+                                let token = authSvc.createToken(row[0])
+                                res.status(200).send({token})
+                            }
+                        })
                     }
-                }) 
+                })
             }else{
-              res.send("already account exit")
+                res.status(401).send("user already exist")
             }
         }
     })
 }
+    
+
+
 
 authSvc.login = function(req, res){
     let user = req.body
-    User.findOne({email : user.email}, (err, dbUser) => {
-        if(err){
-            throw err
-        }else{
-            if(dbUser){
-                if(bcrypt.compareSync(user.password, dbUser.password)){
-                    let token = authSvc.createToken(dbUser._id)
+    mySqlDb.query('select * from users where email = ?', [user.email], (err, row) =>{  
+       if(err){
+        console.log(err)
+        res.status(401).send("login failed")
+       }else{
+           if(row.length !== 0){
+                if(bcrypt.compareSync(user.password, row[0].password)){
+                    let token = authSvc.createToken(row[0].ID)
                     res.status(200).send({ token })
                 }else{
                     res.status(401).send("unauthorized")
                 }
-            }else{
-                res.status(401).send("unauthorized")
-            }
-        }
+           }else{
+            res.status(401).send("unauthorized")
+           }
+       }
     })
 }
 
